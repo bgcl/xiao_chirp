@@ -15,6 +15,22 @@ const int LED_PIN = 21;
 BLECharacteristic *pCharacteristic;
 bool deviceConnected = false;
 
+// ESP32-S3 BLE Power Levels (-24 to +20 dBm)
+esp_power_level_t powerLevels[] = {
+  ESP_PWR_LVL_N24, ESP_PWR_LVL_N21, ESP_PWR_LVL_N18,
+  ESP_PWR_LVL_N15, ESP_PWR_LVL_N12, ESP_PWR_LVL_N9,  ESP_PWR_LVL_N6,
+  ESP_PWR_LVL_N3,  ESP_PWR_LVL_N0,  ESP_PWR_LVL_P3,  ESP_PWR_LVL_P6,
+  ESP_PWR_LVL_P9,  ESP_PWR_LVL_P12, ESP_PWR_LVL_P15, ESP_PWR_LVL_P18,
+  ESP_PWR_LVL_P20
+};
+
+int powerLevelStrings[] = {
+  -24, -21, -18, -15, -12, -9, -6, -3, 0, 3, 6, 9, 12, 15, 18, 20
+};
+
+int currentLevelIndex = 0;
+const int numLevels = 16;
+
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       deviceConnected = true;
@@ -83,25 +99,48 @@ void setup() {
   
   pAdvertising->setScanResponse(true);
   
-  // Set Advertising Interval (100ms for fast detection)
-  pAdvertising->setMinInterval(0x64); // 100ms / 0.625ms = 160 (0xA0)
-  pAdvertising->setMaxInterval(0xA0); 
+  // Set Advertising Interval (2000ms for "slow" chirp)
+  // 2000ms / 0.625ms = 3200 (0xC80)
+  pAdvertising->setMinInterval(0xC80); 
+  pAdvertising->setMaxInterval(0xC80); 
   
   BLEDevice::startAdvertising();
-  Serial.println("BLE Chirp Active with 128-bit UUID.");
+  Serial.println("BLE Chirp Active (2s interval) with 128-bit UUID.");
 }
 
 void loop() {
-  // We can just pulse the LED occasionally to show it's alive
-  if (!deviceConnected) {
-    digitalWrite(LED_PIN, LOW); // ON
-    delay(50);
-    digitalWrite(LED_PIN, HIGH); // OFF
-    delay(1950);
-  } else {
-    // Solid light if connected (optional)
-    digitalWrite(LED_PIN, LOW);
-    delay(100);
-  }
+  // Select the current power level
+  esp_power_level_t power = powerLevels[currentLevelIndex];
+  int dbm = powerLevelStrings[currentLevelIndex];
+
+  // Apply Transmit Power for both Advertising and active Connections
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, power);
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, power);
+  
+  // Output status to Serial
+  Serial.print("[");
+  Serial.print(currentLevelIndex + 1);
+  Serial.print("/");
+  Serial.print(numLevels);
+  Serial.print("] TX Power: ");
+  Serial.print(dbm);
+  Serial.println(" dBm");
+
+  // Indicate level change with LED pulse
+  digitalWrite(LED_PIN, LOW); // ON
+  
+  // Update Service Data or Value if needed (optional)
+  uint8_t chirpData[1] = {0x01};
+  pCharacteristic->setValue(chirpData, 1);
+  pCharacteristic->notify();
+
+  delay(50);
+  digitalWrite(LED_PIN, HIGH); // OFF
+
+  // Complete the 2-second interval
+  delay(1950);
+
+  // Advance to next level
+  currentLevelIndex = (currentLevelIndex + 1) % numLevels;
 }
 
