@@ -4,7 +4,7 @@
 
 // Configuration
 #define SHOUT_PWR ESP_PWR_LVL_P18    
-#define WHISPER_PWR ESP_PWR_LVL_N24  
+#define WHISPER_PWR ESP_PWR_LVL_N21  
 #define SESSION_INTERVAL_MS 10000    
 #define DISCOVERY_WINDOW_MS 1000     
 #define INTERACTION_WINDOW_MS 9000   
