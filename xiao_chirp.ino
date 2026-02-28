@@ -85,10 +85,10 @@ void loop() {
     delay(DISCOVERY_WINDOW_MS);
     digitalWrite(21, HIGH); // LED OFF
 
-    // 3. INTERACTION PHASE: Pulse Loop
+    // 3. INTERACTION PHASE: Pulse Loop (6s)
     Serial.println(">>> Interaction: PULSING");
     unsigned long interaction_start = millis();
-    while (millis() - interaction_start < 4000) {
+    while (millis() - interaction_start < 6000) {
         if (millis() - last_session_refresh > SESSION_INTERVAL_MS) {
             update_session_data();
         }
