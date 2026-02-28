@@ -7,7 +7,7 @@
 #define WHISPER_PWR ESP_PWR_LVL_N24  
 #define SESSION_INTERVAL_MS 10000    
 #define DISCOVERY_WINDOW_MS 1000     
-#define PULSE_WINDOW_MS 200          
+#define INTERACTION_WINDOW_MS 9000   
 
 // BLE State
 BLEAdvertising *pAdvertising;
@@ -29,16 +29,14 @@ void update_session_data() {
                   current_session_id, current_time_rounded, secret_key, encrypted_time);
 }
 
-// FAST PAYLOAD UPDATE
-// Updates data WITHOUT stopping advertising
 void update_adv_payload(uint8_t type, uint16_t session, uint32_t data_val) {
     uint8_t payload[10];
-    payload[0] = 0x09; // Length (Type + ID + Status + Session + Data)
-    payload[1] = 0xFF; // Manufacturer Specific Data type
-    payload[2] = 0xFF; // Company ID Lo
-    payload[3] = 0xFF; // Company ID Hi
+    payload[0] = 0x09; 
+    payload[1] = 0xFF; 
+    payload[2] = 0xFF; 
+    payload[3] = 0xFF; 
     
-    payload[4] = type; // 0x01 Shout, 0x02 Whisper
+    payload[4] = type; 
     payload[5] = (session >> 8) & 0xFF;
     payload[6] = session & 0xFF;
     payload[7] = (data_val >> 16) & 0xFF;
@@ -48,8 +46,6 @@ void update_adv_payload(uint8_t type, uint16_t session, uint32_t data_val) {
     BLEAdvertisementData oData;
     oData.setFlags(0x06);
     oData.addData((char*)payload, 10);
-    
-    // Most modern ESP32 cores allow updating data on-the-fly
     pAdvertising->setAdvertisementData(oData);
 }
 
@@ -60,14 +56,10 @@ void setup() {
 
     BLEDevice::init("XIAO_CHIRP_POC");
     pAdvertising = BLEDevice::getAdvertising();
-    
-    // Set fast advertising interval (20ms)
     pAdvertising->setMinInterval(0x20); 
     pAdvertising->setMaxInterval(0x20);
     
     update_session_data();
-    
-    // Start once and stay active
     pAdvertising->start();
 }
 
@@ -76,28 +68,25 @@ void loop() {
         update_session_data();
     }
 
-    // 1. DISCOVERY PHASE: Solid Shout
+    // 1. DISCOVERY PHASE: SHOUT the Payload (+18dBm)
     digitalWrite(21, LOW); 
     BLEDevice::setPower(SHOUT_PWR);
     update_adv_payload(0x01, current_session_id, encrypted_time);
     delay(DISCOVERY_WINDOW_MS);
     digitalWrite(21, HIGH); 
 
-    // 2. INTERACTION PHASE: Pulse Loop (9s)
+    // 2. INTERACTION PHASE: WHISPER the Key (-24dBm)
+    // No pulsing - just 100% key airtime during this window
+    BLEDevice::setPower(WHISPER_PWR);
+    update_adv_payload(0x02, current_session_id, secret_key);
+    
     unsigned long interaction_start = millis();
-    while (millis() - interaction_start < 9000) {
+    while (millis() - interaction_start < INTERACTION_WINDOW_MS) {
         if (millis() - last_session_refresh > SESSION_INTERVAL_MS) {
             update_session_data();
+            // Refresh the key in the air if the session rolls
+            update_adv_payload(0x02, current_session_id, secret_key);
         }
-
-        // Shout Pulse
-        BLEDevice::setPower(SHOUT_PWR);
-        update_adv_payload(0x01, current_session_id, encrypted_time);
-        delay(PULSE_WINDOW_MS);
-
-        // Whisper Pulse
-        BLEDevice::setPower(WHISPER_PWR);
-        update_adv_payload(0x02, current_session_id, secret_key);
-        delay(PULSE_WINDOW_MS);
+        delay(100); // Wait for session roll or loop end
     }
 }
