@@ -23,11 +23,14 @@ void update_session_data() {
     current_session_id = (uint16_t)random(1, 65535);
     secret_key = (uint32_t)random(1, 0xFFFFFF); // 24-bit key
     
-    uint32_t current_time_rounded = (millis() / 1000 / 10) * 10;
+    // Use actual uptime in seconds, rounded down to nearest 10
+    uint32_t uptime_sec = millis() / 1000;
+    uint32_t current_time_rounded = (uptime_sec / 10) * 10;
+    
     encrypted_time = current_time_rounded ^ secret_key;
     
     last_session_refresh = millis();
-    Serial.printf("New Session: %04X | Time: %d | Key: %06X | Enc: %06X\n", 
+    Serial.printf("New Session: %04X | Time: %u | Key: %06X | Enc: %06X\n", 
                   current_session_id, current_time_rounded, secret_key, encrypted_time);
 }
 
