@@ -75,16 +75,17 @@ void loop() {
         update_session_data();
     }
 
-    // 1. DISCOVERY PHASE: Solid Shout
+    // 2. DISCOVERY PHASE: Solid Shout
     Serial.println(">>> Discovery: SHOUTING");
+    digitalWrite(21, LOW); // LED ON (Active LOW)
+    
     BLEDevice::setPower(SHOUT_PWR);
     set_adv_payload(0x01, current_session_id, encrypted_time);
     
-    digitalWrite(21, LOW); // LED ON
     delay(DISCOVERY_WINDOW_MS);
     digitalWrite(21, HIGH); // LED OFF
 
-    // 2. INTERACTION PHASE: Pulse Loop
+    // 3. INTERACTION PHASE: Pulse Loop
     Serial.println(">>> Interaction: PULSING");
     unsigned long interaction_start = millis();
     while (millis() - interaction_start < 4000) {
