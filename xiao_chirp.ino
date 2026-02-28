@@ -37,9 +37,9 @@ void update_session_data() {
 void set_adv_payload(uint8_t type, uint16_t session, uint32_t data_val) {
     pAdvertising->stop();
     
-    // Clear and build raw data
-    uint8_t payload[9];
-    payload[0] = 0x08; // Length (Type + ID + Data)
+    // Total 10 bytes: 1 Len + 1 Type (0xFF) + 2 CompanyID + 1 Status + 2 Session + 3 Data
+    uint8_t payload[10];
+    payload[0] = 0x09; // Length (Type + ID + Status + Session + Data)
     payload[1] = 0xFF; // Manufacturer Specific Data type
     payload[2] = 0xFF; // Company ID Lo
     payload[3] = 0xFF; // Company ID Hi
@@ -52,7 +52,7 @@ void set_adv_payload(uint8_t type, uint16_t session, uint32_t data_val) {
     payload[9] = data_val & 0xFF;
 
     BLEAdvertisementData oData;
-    oData.setFlags(0x06); // General Discoverable, BR/EDR Not Supported
+    oData.setFlags(0x06);
     oData.addData((char*)payload, 10);
     pAdvertising->setAdvertisementData(oData);
     
