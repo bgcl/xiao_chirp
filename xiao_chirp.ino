@@ -1,14 +1,13 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
-#include <BLE2902.h>
 
 // Configuration
-#define SHOUT_PWR ESP_PWR_LVL_P18    // +18dBm (S3 Max is ~18-20)
-#define WHISPER_PWR ESP_PWR_LVL_N24  // -24dBm (Lowest possible)
-#define SESSION_INTERVAL_MS 10000    // Refresh data every 10s
-#define DISCOVERY_WINDOW_MS 1000     // Solid shout for 1s
-#define PULSE_WINDOW_MS 200          // Pulse shout/whisper for 200ms
+#define SHOUT_PWR ESP_PWR_LVL_P18    
+#define WHISPER_PWR ESP_PWR_LVL_N24  
+#define SESSION_INTERVAL_MS 10000    
+#define DISCOVERY_WINDOW_MS 1000     
+#define PULSE_WINDOW_MS 200          
 
 // BLE State
 BLEAdvertising *pAdvertising;
@@ -21,23 +20,18 @@ unsigned long last_session_refresh = 0;
 
 void update_session_data() {
     current_session_id = (uint16_t)random(1, 65535);
-    secret_key = (uint32_t)random(1, 0xFFFFFF); // 24-bit key
-    
-    // Use actual uptime in seconds, rounded down to nearest 10
+    secret_key = (uint32_t)random(1, 0xFFFFFF); 
     uint32_t uptime_sec = millis() / 1000;
     uint32_t current_time_rounded = (uptime_sec / 10) * 10;
-    
     encrypted_time = current_time_rounded ^ secret_key;
-    
     last_session_refresh = millis();
     Serial.printf("New Session: %04X | Time: %u | Key: %06X | Enc: %06X\n", 
                   current_session_id, current_time_rounded, secret_key, encrypted_time);
 }
 
-void set_adv_payload(uint8_t type, uint16_t session, uint32_t data_val) {
-    pAdvertising->stop();
-    
-    // Total 10 bytes: 1 Len + 1 Type (0xFF) + 2 CompanyID + 1 Status + 2 Session + 3 Data
+// FAST PAYLOAD UPDATE
+// Updates data WITHOUT stopping advertising
+void update_adv_payload(uint8_t type, uint16_t session, uint32_t data_val) {
     uint8_t payload[10];
     payload[0] = 0x09; // Length (Type + ID + Status + Session + Data)
     payload[1] = 0xFF; // Manufacturer Specific Data type
@@ -54,20 +48,27 @@ void set_adv_payload(uint8_t type, uint16_t session, uint32_t data_val) {
     BLEAdvertisementData oData;
     oData.setFlags(0x06);
     oData.addData((char*)payload, 10);
-    pAdvertising->setAdvertisementData(oData);
     
-    pAdvertising->start();
+    // Most modern ESP32 cores allow updating data on-the-fly
+    pAdvertising->setAdvertisementData(oData);
 }
 
 void setup() {
     Serial.begin(115200);
-    pinMode(21, OUTPUT); // Built-in LED
-    digitalWrite(21, HIGH); // Active LOW off
+    pinMode(21, OUTPUT);
+    digitalWrite(21, HIGH);
 
     BLEDevice::init("XIAO_CHIRP_POC");
     pAdvertising = BLEDevice::getAdvertising();
     
+    // Set fast advertising interval (20ms)
+    pAdvertising->setMinInterval(0x20); 
+    pAdvertising->setMaxInterval(0x20);
+    
     update_session_data();
+    
+    // Start once and stay active
+    pAdvertising->start();
 }
 
 void loop() {
@@ -75,18 +76,14 @@ void loop() {
         update_session_data();
     }
 
-    // 2. DISCOVERY PHASE: Solid Shout
-    Serial.println(">>> Discovery: SHOUTING");
-    digitalWrite(21, LOW); // LED ON (Active LOW)
-    
+    // 1. DISCOVERY PHASE: Solid Shout
+    digitalWrite(21, LOW); 
     BLEDevice::setPower(SHOUT_PWR);
-    set_adv_payload(0x01, current_session_id, encrypted_time);
-    
+    update_adv_payload(0x01, current_session_id, encrypted_time);
     delay(DISCOVERY_WINDOW_MS);
-    digitalWrite(21, HIGH); // LED OFF
+    digitalWrite(21, HIGH); 
 
-    // 3. INTERACTION PHASE: Pulse Loop (9s)
-    Serial.println(">>> Interaction: PULSING");
+    // 2. INTERACTION PHASE: Pulse Loop (9s)
     unsigned long interaction_start = millis();
     while (millis() - interaction_start < 9000) {
         if (millis() - last_session_refresh > SESSION_INTERVAL_MS) {
@@ -95,12 +92,12 @@ void loop() {
 
         // Shout Pulse
         BLEDevice::setPower(SHOUT_PWR);
-        set_adv_payload(0x01, current_session_id, encrypted_time);
+        update_adv_payload(0x01, current_session_id, encrypted_time);
         delay(PULSE_WINDOW_MS);
 
         // Whisper Pulse
         BLEDevice::setPower(WHISPER_PWR);
-        set_adv_payload(0x02, current_session_id, secret_key);
+        update_adv_payload(0x02, current_session_id, secret_key);
         delay(PULSE_WINDOW_MS);
     }
 }
