@@ -25,6 +25,10 @@ Stage 2 implements a secure, high-speed proximity handshake ("Token & Tunnel") d
 ### C. Handshake Speed
 *   **Result:** Moving to "Early Exit" logic reduced the back-to-back sync delay from 10 seconds to **~2 seconds**.
 
+### D. GATT State Synchronization
+*   **Discovery:** A race condition was identified between the Android "Handshake Timeout" watchdog and the GATT "Success" callback. This could leave `activeGatt` in a non-null state, permanently blocking future syncs.
+*   **Fix:** Implemented `synchronized(this)` blocks around all `activeGatt` access and centralized cleanup into a `cleanupGatt()` method to ensure atomic state resets.
+
 ---
 
 ## 2. Packet Structure (Service Data Record)
