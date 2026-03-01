@@ -78,24 +78,23 @@ class AuthCallbacks: public BLECharacteristicCallbacks {
 };
 
 void update_adv_payload(bool isWhisper) {
-    uint8_t payload[28]; 
-    payload[0] = 0x1B; 
-    payload[1] = 0xFF; 
-    payload[2] = 0xFF; 
-    payload[3] = 0xFF; 
+    uint8_t data[24]; 
     
     if (!isWhisper) {
-        payload[4] = 0x00; 
-        memset(&payload[5], 0, 23); 
+        data[0] = 0x00; 
+        memset(&data[1], 0, 23); 
     } else {
-        payload[4] = current_sequence++;
+        data[0] = current_sequence++;
         if (current_sequence == 0) current_sequence = 1; 
-        memcpy(&payload[5], current_token, 23);
+        memcpy(&data[1], current_token, 23);
     }
 
     BLEAdvertisementData oData;
     oData.setFlags(0x06);
-    oData.addData((char*)payload, 28);
+    
+    // Proper way to set manufacturer data (Company ID 0xFFFF)
+    oData.setManufacturerData(String((char*)data, 24));
+    
     pAdvertising->setAdvertisementData(oData);
 }
 
