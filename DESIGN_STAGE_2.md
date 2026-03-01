@@ -30,9 +30,9 @@ Stage 2 implements a secure, high-speed proximity handshake ("Token & Tunnel") d
 *   **Discovery:** A race condition was identified between the Android "Handshake Timeout" watchdog and the GATT "Success" callback. This could leave `activeGatt` in a non-null state, permanently blocking future syncs.
 *   **Fix:** Implemented `synchronized(this)` blocks around all `activeGatt` access and centralized cleanup into a `cleanupGatt()` method to ensure atomic state resets.
 
-### E. Android OS Scan Rate Limits
-*   **Discovery:** Android 7.0+ silently enforces a limit of 5 BLE scans per 30-second window. Stopping and restarting the scanner during each GATT connection (to clear deduplication caches) caused the OS to blacklist the app, resulting in "deafness" and sync hangs.
-*   **Fix:** The OS scanner is left running continuously. The system relies purely on the `synchronized(this)` state lock (`activeGatt != null`) to logically ignore incoming packets during a connection, bypassing the OS penalty box entirely.
+### F. Android BLE Deduplication Cache (The "Dynamic Company ID" Hack)
+*   **Discovery:** Even with the scanner left running, Android caches Advertisement payloads per MAC Address. It often ignores updated payloads if the AD Type and Company ID remain identical. This caused the phone to endlessly match the old token even after the XIAO rotated it.
+*   **Fix:** Instead of a static Company ID (`0xFFFF`), the XIAO now dynamically sets the low byte of the Company ID to the `current_sequence` variable. Because the Company ID changes every 20ms, the Android OS is forced to treat every pulse as a "new" record and bypasses the deduplication cache, delivering the fresh 184-bit token payload to the application immediately.
 
 ---
 
