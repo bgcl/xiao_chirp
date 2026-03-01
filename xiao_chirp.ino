@@ -15,7 +15,7 @@
 #define PULSE_MS            200
 
 // State
-uint8_t current_token[9]; 
+uint8_t current_token[23]; // Back to 184-bit token
 uint8_t current_sequence = 1;
 unsigned long session_start = 0;
 unsigned long connection_timestamp = 0;
@@ -27,7 +27,7 @@ BLEAdvertising *pAdvertising;
 BLEServer *pServerGlobal;
 
 void generate_new_token() {
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 23; i++) {
         current_token[i] = (uint8_t)random(1, 256); 
     }
     current_sequence = 1;
@@ -54,9 +54,9 @@ class AuthCallbacks: public BLECharacteristicCallbacks {
         uint8_t* pData = pCharacteristic->getData();
         size_t len = pCharacteristic->getLength();
         
-        bool match = (len == 9);
+        bool match = (len == 23);
         if (match) {
-            for (int i = 0; i < 9; i++) {
+            for (int i = 0; i < 23; i++) {
                 if (pData[i] != current_token[i]) {
                     match = false;
                     break;
@@ -77,24 +77,28 @@ class AuthCallbacks: public BLECharacteristicCallbacks {
 };
 
 void update_adv_payload(bool isWhisper) {
-    uint8_t payload[10]; 
+    uint8_t payload[24]; 
     if (!isWhisper) {
-        memset(payload, 0, 10); 
+        memset(payload, 0, 24); 
     } else {
         payload[0] = current_sequence++;
         if (current_sequence == 0) current_sequence = 1; 
-        memcpy(&payload[1], current_token, 9);
+        memcpy(&payload[1], current_token, 23);
     }
 
     BLEAdvertisementData oData;
     oData.setFlags(0x06);
     
+    // BACK TO: Manufacturer Specific Data (0xFF) with Company ID 0xFFFF
+    // Record = [Length] [Type 0xFF] [CompanyID 0xFFFF] [Data 24 bytes]
+    // Total record length = 1 (Type) + 2 (CompanyID) + 24 (Data) = 27 bytes
+    // Total byte array passed to addData = [Length] + Record = 28 bytes
     uint8_t fullRecord[28];
     fullRecord[0] = 27;   
-    fullRecord[1] = 0x21; 
-    uint8_t uuid_bytes[16] = {0x34, 0x34, 0x34, 0x9c, 0xcc, 0xf1, 0x79, 0x8d, 0xcb, 0x43, 0x34, 0x69, 0x41, 0x38, 0xed, 0x19};
-    memcpy(&fullRecord[2], uuid_bytes, 16);
-    memcpy(&fullRecord[18], payload, 10);
+    fullRecord[1] = 0xFF; 
+    fullRecord[2] = 0xFF; // Company ID 0xFFFF (Low)
+    fullRecord[3] = 0xFF; // Company ID 0xFFFF (High)
+    memcpy(&fullRecord[4], payload, 24);
     
     oData.addData((char*)fullRecord, 28);
     pAdvertising->setAdvertisementData(oData);
@@ -125,27 +129,23 @@ void setup() {
 }
 
 void loop() {
-    // Check for rotation request or time-based expiry
-    if (millis() - session_start > 10000 || rotateTokenNextLoop) {
-        generate_new_token();
-    }
+    if (millis() - session_start > 10000 || rotateTokenNextLoop) generate_new_token();
 
-    // 1. DISCOVERY HEADER (1s) - SOLID SHOUT
+    // 1. DISCOVERY HEADER (1s)
     digitalWrite(21, LOW); 
     BLEDevice::setPower(SHOUT_PWR);
     update_adv_payload(false); 
     
     unsigned long discovery_start = millis();
     while (millis() - discovery_start < DISCOVERY_MS) {
-        if (rotateTokenNextLoop) break; // Allow interruption if rotation was triggered
+        if (rotateTokenNextLoop) break;
         delay(50);
     }
     digitalWrite(21, HIGH);
 
-    // 2. INTERACTION WINDOW (9s) - PULSED WHISPER
+    // 2. INTERACTION WINDOW (9s)
     unsigned long interact_start = millis();
     while (millis() - interact_start < INTERACTION_MS) {
-        // FAST EXIT: If a sync happened, exit the window immediately to rotate token
         if (rotateTokenNextLoop) break;
 
         if (deviceConnected) { 
@@ -158,7 +158,6 @@ void loop() {
             continue; 
         }
         
-        // Whisper Pulse
         BLEDevice::setPower(WHISPER_PWR);
         unsigned long whisper_start = millis();
         while (millis() - whisper_start < PULSE_MS) {
@@ -167,7 +166,6 @@ void loop() {
             delay(20);
         }
 
-        // Shout Pulse
         if (rotateTokenNextLoop || deviceConnected) continue;
         BLEDevice::setPower(SHOUT_PWR);
         unsigned long shout_start = millis();
