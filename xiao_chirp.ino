@@ -62,6 +62,7 @@ class AuthCallbacks: public BLECharacteristicCallbacks {
             Serial.println("AUTH SUCCESS");
             uint32_t uptime = millis();
             pTimeChar->setValue((uint8_t*)&uptime, 4);
+            // The value is now ready for the client to read
         } else {
             Serial.println("AUTH FAILED: Rotating.");
             generate_new_token();
