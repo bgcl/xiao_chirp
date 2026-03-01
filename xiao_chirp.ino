@@ -19,6 +19,7 @@ uint8_t current_token[23];
 uint8_t current_sequence = 1;
 unsigned long session_start = 0;
 bool deviceConnected = false;
+bool rotateTokenNextLoop = false; // Flag for immediate rotation
 BLECharacteristic *pTimeChar;
 BLECharacteristic *pAuthChar;
 BLEAdvertising *pAdvertising;
@@ -30,6 +31,7 @@ void generate_new_token() {
     }
     current_sequence = 1;
     session_start = millis();
+    rotateTokenNextLoop = false; 
     Serial.print("NEW TOKEN: ");
     for(int i=0; i<4; i++) Serial.printf("%02X", current_token[i]);
     Serial.println("...");
@@ -62,7 +64,7 @@ class AuthCallbacks: public BLECharacteristicCallbacks {
             Serial.println("AUTH SUCCESS");
             uint32_t uptime = millis();
             pTimeChar->setValue((uint8_t*)&uptime, 4);
-            // The value is now ready for the client to read
+            rotateTokenNextLoop = true; // Mark for immediate rotation
         } else {
             Serial.println("AUTH FAILED: Rotating.");
             generate_new_token();
@@ -119,7 +121,7 @@ void setup() {
 }
 
 void loop() {
-    if (millis() - session_start > 10000) generate_new_token();
+    if (millis() - session_start > 10000 || rotateTokenNextLoop) generate_new_token();
 
     // 1. DISCOVERY HEADER (1s)
     digitalWrite(21, LOW); 
@@ -133,14 +135,22 @@ void loop() {
     while (millis() - interact_start < INTERACTION_MS) {
         if (deviceConnected) { delay(100); continue; }
         
-        if (millis() - session_start > 10000) generate_new_token();
+        if (millis() - session_start > 10000 || rotateTokenNextLoop) generate_new_token();
 
+        // Whisper Pulse - 20ms update rate
         BLEDevice::setPower(WHISPER_PWR);
-        update_adv_payload(true);
-        delay(PULSE_MS);
+        unsigned long whisper_start = millis();
+        while (millis() - whisper_start < PULSE_MS) {
+            update_adv_payload(true); 
+            delay(20);
+        }
 
+        // Shout Pulse - 20ms update rate
         BLEDevice::setPower(SHOUT_PWR);
-        update_adv_payload(false);
-        delay(PULSE_MS);
+        unsigned long shout_start = millis();
+        while (millis() - shout_start < PULSE_MS) {
+            update_adv_payload(false); 
+            delay(20);
+        }
     }
 }
