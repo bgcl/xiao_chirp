@@ -15,10 +15,10 @@
 #define PULSE_MS            200
 
 // State
-uint8_t current_token[23];
+uint8_t current_token[9]; 
 uint8_t current_sequence = 1;
 unsigned long session_start = 0;
-unsigned long connection_timestamp = 0; // Watchdog timer
+unsigned long connection_timestamp = 0;
 bool deviceConnected = false;
 bool rotateTokenNextLoop = false; 
 BLECharacteristic *pTimeChar;
@@ -27,7 +27,7 @@ BLEAdvertising *pAdvertising;
 BLEServer *pServerGlobal;
 
 void generate_new_token() {
-    for (int i = 0; i < 23; i++) {
+    for (int i = 0; i < 9; i++) {
         current_token[i] = (uint8_t)random(1, 256); 
     }
     current_sequence = 1;
@@ -54,9 +54,9 @@ class AuthCallbacks: public BLECharacteristicCallbacks {
         uint8_t* pData = pCharacteristic->getData();
         size_t len = pCharacteristic->getLength();
         
-        bool match = (len == 23);
+        bool match = (len == 9);
         if (match) {
-            for (int i = 0; i < 23; i++) {
+            for (int i = 0; i < 9; i++) {
                 if (pData[i] != current_token[i]) {
                     match = false;
                     break;
@@ -68,33 +68,35 @@ class AuthCallbacks: public BLECharacteristicCallbacks {
             Serial.println("AUTH SUCCESS");
             uint32_t uptime = millis();
             pTimeChar->setValue((uint8_t*)&uptime, 4);
-            rotateTokenNextLoop = true; // Mark for immediate rotation
+            rotateTokenNextLoop = true; 
         } else {
             Serial.println("AUTH FAILED: Rotating.");
             generate_new_token();
         }
-        // Small delay to let read happen before we disconnect manually in next logic
     }
 };
 
 void update_adv_payload(bool isWhisper) {
-    uint8_t data[24]; 
-    
+    uint8_t payload[10]; 
     if (!isWhisper) {
-        data[0] = 0x00; 
-        memset(&data[1], 0, 23); 
+        memset(payload, 0, 10); 
     } else {
-        data[0] = current_sequence++;
+        payload[0] = current_sequence++;
         if (current_sequence == 0) current_sequence = 1; 
-        memcpy(&data[1], current_token, 23);
+        memcpy(&payload[1], current_token, 9);
     }
 
     BLEAdvertisementData oData;
     oData.setFlags(0x06);
     
-    // Proper way to set manufacturer data (Company ID 0xFFFF)
-    oData.setManufacturerData(String((char*)data, 24));
+    uint8_t fullRecord[28];
+    fullRecord[0] = 27;   
+    fullRecord[1] = 0x21; 
+    uint8_t uuid_bytes[16] = {0x34, 0x34, 0x34, 0x9c, 0xcc, 0xf1, 0x79, 0x8d, 0xcb, 0x43, 0x34, 0x69, 0x41, 0x38, 0xed, 0x19};
+    memcpy(&fullRecord[2], uuid_bytes, 16);
+    memcpy(&fullRecord[18], payload, 10);
     
+    oData.addData((char*)fullRecord, 28);
     pAdvertising->setAdvertisementData(oData);
 }
 
@@ -115,7 +117,6 @@ void setup() {
     pService->start();
 
     pAdvertising = BLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->setMinInterval(0x20);
     pAdvertising->setMaxInterval(0x20);
 
@@ -124,43 +125,54 @@ void setup() {
 }
 
 void loop() {
-    if (millis() - session_start > 10000 || rotateTokenNextLoop) generate_new_token();
+    // Check for rotation request or time-based expiry
+    if (millis() - session_start > 10000 || rotateTokenNextLoop) {
+        generate_new_token();
+    }
 
-    // 1. DISCOVERY HEADER (1s)
+    // 1. DISCOVERY HEADER (1s) - SOLID SHOUT
     digitalWrite(21, LOW); 
     BLEDevice::setPower(SHOUT_PWR);
     update_adv_payload(false); 
-    delay(DISCOVERY_MS);
+    
+    unsigned long discovery_start = millis();
+    while (millis() - discovery_start < DISCOVERY_MS) {
+        if (rotateTokenNextLoop) break; // Allow interruption if rotation was triggered
+        delay(50);
+    }
     digitalWrite(21, HIGH);
 
-    // 2. INTERACTION WINDOW (9s)
+    // 2. INTERACTION WINDOW (9s) - PULSED WHISPER
     unsigned long interact_start = millis();
     while (millis() - interact_start < INTERACTION_MS) {
+        // FAST EXIT: If a sync happened, exit the window immediately to rotate token
+        if (rotateTokenNextLoop) break;
+
         if (deviceConnected) { 
-            // Server-side Watchdog: Forcibly disconnect after 2 seconds
             if (millis() - connection_timestamp > 2000) {
                 Serial.println("WATCHDOG: Forcing Disconnect.");
                 pServerGlobal->disconnect(0); 
-                connection_timestamp = millis(); // Reset timer so it only fires once every 2s if still stuck
+                connection_timestamp = millis();
             }
             delay(100); 
             continue; 
         }
         
-        // Removed redundant generate_new_token check here
-
-        // Whisper Pulse - 20ms update rate
+        // Whisper Pulse
         BLEDevice::setPower(WHISPER_PWR);
         unsigned long whisper_start = millis();
         while (millis() - whisper_start < PULSE_MS) {
+            if (rotateTokenNextLoop || deviceConnected) break;
             update_adv_payload(true); 
             delay(20);
         }
 
-        // Shout Pulse - 20ms update rate
+        // Shout Pulse
+        if (rotateTokenNextLoop || deviceConnected) continue;
         BLEDevice::setPower(SHOUT_PWR);
         unsigned long shout_start = millis();
         while (millis() - shout_start < PULSE_MS) {
+            if (rotateTokenNextLoop || deviceConnected) break;
             update_adv_payload(false); 
             delay(20);
         }
