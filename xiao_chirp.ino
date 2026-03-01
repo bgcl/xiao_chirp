@@ -9,7 +9,7 @@
 #define TIME_CHAR_UUID      "19ed3843-6934-43cb-8d79-f1cc9c343434"
 
 #define SHOUT_PWR           ESP_PWR_LVL_P18
-#define WHISPER_PWR         ESP_PWR_LVL_N24
+#define WHISPER_PWR         ESP_PWR_LVL_N12
 #define DISCOVERY_MS        1000
 #define INTERACTION_MS      9000
 #define PULSE_MS            200
