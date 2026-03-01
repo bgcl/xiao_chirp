@@ -33,6 +33,7 @@ void generate_new_token() {
     current_sequence = 1;
     session_start = millis();
     rotateTokenNextLoop = false; 
+    
     Serial.print("NEW TOKEN: ");
     for(int i=0; i<4; i++) Serial.printf("%02X", current_token[i]);
     Serial.println("...");
@@ -89,15 +90,11 @@ void update_adv_payload(bool isWhisper) {
     BLEAdvertisementData oData;
     oData.setFlags(0x06);
     
-    // BACK TO: Manufacturer Specific Data (0xFF) with Company ID 0xFFFF
-    // Record = [Length] [Type 0xFF] [CompanyID 0xFFFF] [Data 24 bytes]
-    // Total record length = 1 (Type) + 2 (CompanyID) + 24 (Data) = 27 bytes
-    // Total byte array passed to addData = [Length] + Record = 28 bytes
     uint8_t fullRecord[28];
     fullRecord[0] = 27;   
     fullRecord[1] = 0xFF; 
-    fullRecord[2] = 0xFF; // Company ID 0xFFFF (Low)
-    fullRecord[3] = 0xFF; // Company ID 0xFFFF (High)
+    fullRecord[2] = current_sequence; // Dynamic Company ID Low byte!
+    fullRecord[3] = 0xFF;             // Company ID High byte
     memcpy(&fullRecord[4], payload, 24);
     
     oData.addData((char*)fullRecord, 28);
@@ -125,7 +122,7 @@ void setup() {
     pAdvertising->setMaxInterval(0x20);
     pAdvertising->setScanResponse(false); // Disable scan response
     
-    generate_new_token();
+    generate_new_token(); // Now safe to rotate MAC
     pAdvertising->start();
 }
 
