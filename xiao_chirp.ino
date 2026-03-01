@@ -18,8 +18,9 @@
 uint8_t current_token[23];
 uint8_t current_sequence = 1;
 unsigned long session_start = 0;
+unsigned long connection_timestamp = 0; // Watchdog timer
 bool deviceConnected = false;
-bool rotateTokenNextLoop = false; // Flag for immediate rotation
+bool rotateTokenNextLoop = false; 
 BLECharacteristic *pTimeChar;
 BLECharacteristic *pAuthChar;
 BLEAdvertising *pAdvertising;
@@ -38,7 +39,10 @@ void generate_new_token() {
 }
 
 class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) { deviceConnected = true; }
+    void onConnect(BLEServer* pServer) { 
+        deviceConnected = true; 
+        connection_timestamp = millis(); 
+    }
     void onDisconnect(BLEServer* pServer) { 
         deviceConnected = false;
         pServer->getAdvertising()->start();
@@ -133,7 +137,15 @@ void loop() {
     // 2. INTERACTION WINDOW (9s)
     unsigned long interact_start = millis();
     while (millis() - interact_start < INTERACTION_MS) {
-        if (deviceConnected) { delay(100); continue; }
+        if (deviceConnected) { 
+            // Server-side Watchdog: Forcibly disconnect after 2 seconds
+            if (millis() - connection_timestamp > 2000) {
+                Serial.println("WATCHDOG: Forcing Disconnect.");
+                pServerGlobal->disconnect(0); // Disconnect client 0
+            }
+            delay(100); 
+            continue; 
+        }
         
         if (millis() - session_start > 10000 || rotateTokenNextLoop) generate_new_token();
 
