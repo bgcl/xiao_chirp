@@ -30,25 +30,28 @@ Stage 2 implements a secure, high-speed proximity handshake ("Token & Tunnel") d
 *   **Discovery:** A race condition was identified between the Android "Handshake Timeout" watchdog and the GATT "Success" callback. This could leave `activeGatt` in a non-null state, permanently blocking future syncs.
 *   **Fix:** Implemented `synchronized(this)` blocks around all `activeGatt` access and centralized cleanup into a `cleanupGatt()` method to ensure atomic state resets.
 
-### F. Android BLE Deduplication Cache (The "Dynamic Company ID" Hack)
-*   **Discovery:** Even with the scanner left running, Android caches Advertisement payloads per MAC Address. It often ignores updated payloads if the AD Type and Company ID remain identical. This caused the phone to endlessly match the old token even after the XIAO rotated it.
-*   **Fix:** Instead of a static Company ID (`0xFFFF`), the XIAO now dynamically sets the low byte of the Company ID to the `current_sequence` variable. Because the Company ID changes every 20ms, the Android OS is forced to treat every pulse as a "new" record and bypasses the deduplication cache, delivering the fresh 184-bit token payload to the application immediately.
+### F. Android BLE Deduplication Cache (The "Token-Derived UUID" Architecture)
+*   **Discovery:** Even with the scanner left running, Android caches Advertisement payloads per MAC Address. It often ignores updated payloads if the AD Type and Service UUID remain identical. This caused the phone to endlessly match the old token even after the XIAO rotated it.
+*   **Fix:** We moved to a **Token-Derived UUID** architecture. The first 6 bytes of our one-time token are injected directly into the end of our Service UUID. Android hardware filters natively match the first 10 bytes (our app's base UUID), while the last 6 bytes change whenever the token rotates. This perfectly defeats the OS cache because every new token creates a "new" Service UUID.
 
 ---
 
-## 2. Packet Structure (Service Data Record)
+## 2. Packet Structure (Token-Derived UUID Record)
+To fit within the strict 31-byte BLE limit, the packet is divided as follows:
+*   **Token Size:** 11 bytes (88-bit entropy).
 
 | Segment | Size | Description |
 | :--- | :--- | :--- |
 | **Flags** | 3 Bytes | `0x06` (LE General Discoverable) |
-| **Record Header** | 2 Bytes | `[0x1B]` (Length 27) + `[0x21]` (Service Data 128-bit) |
-| **Service UUID** | 16 Bytes | `19ed3841-6934-43cb-8d79-f1cc9c343434` |
-| **Payload** | **10 Bytes** | `[Sequence (1)]` + `[One-Time Token (9)]` |
+| **Service UUID** | 18 Bytes | `19ed3841-6934-43cb-8d79-` + `[Token Bytes 0-5]` |
+| **Manufacturer Data** | 10 Bytes | `0xFFFF` + `[Sequence (1)]` + `[Token Bytes 6-10]` |
+
+Total AD Size: Exactly 31 Bytes.
 
 ---
 
 ## 3. Final Refined Flow
-1.  **XIAO** whispers a 72-bit token every 20ms at -12dBm.
+1.  **XIAO** whispers an 88-bit token every 20ms at -12dBm.
 2.  **Phone** captures the Whisper token at proximity via `ScanFilter`.
 3.  **Phone** connects via GATT and writes Token to `AUTH_CHAR`.
 4.  **XIAO** verifies Token, prepares `DATA_CHAR`, and prepares for rotation.
