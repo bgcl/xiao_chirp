@@ -1,13 +1,13 @@
-# Design Stage 2: Token & Tunnel Architecture
+# Design Stage 2: Token & Tunnel Architecture (Refined)
 
 ## Rationale
-Stage 1 (XOR Uptime) successfully proved that dual-power proximity synchronization works. Stage 2 optimizes this model for "Millions of Users" production requirements: infinite payload support, elite cryptographic security, and empirical radio diagnostics for antenna-less hardware.
+Stage 2 optimizes for "Millions of Users" production requirements: infinite payload support, elite cryptographic security, and empirical radio diagnostics. It introduces a physical firewall backed by a 184-bit "One-Time Secret" and high-speed GATT interaction.
 
 ### Key Architectural Decisions:
-1.  **Entropy Maximization:** We reclaim every bit of the standard 31-byte BLE advertisement. By using a 24-byte payload, we provide 184 bits of security entropy—physically impossible to brute-force during a transaction window.
-2.  **Implicit Typing:** We waste zero bytes on "Status" or "Type" flags. The app distinguishes a "Shout" from a "Whisper" by looking for trailing zeros in the 24-byte block. 
-3.  **MAC Independence:** Any merchant's "Shout" wakes the app; any "Whisper" with a valid token triggers the handshake. This ensures speed and versatility in crowded environments.
-4.  **Fragility Analytics:** Since the Bluetooth hardware silently discards corrupted packets (CRC failure), we use a 1-byte Sequence Counter to visualize "Radio Stutter" and empirically measure the limits of our antenna-less "Physical Firewall."
+1.  **Entropy Maximization:** Reclaims every bit of the standard 31-byte BLE advertisement. Uses a 24-byte payload providing 184 bits of security entropy (Bytes 1-23).
+2.  **Implicit Typing:** Bytes 1-23 are zeros for "Shout" and non-zero for "Whisper."
+3.  **Asymmetric Pulsing:** To ensure no phone is left "asleep," the interaction phase alternates between Shout and Whisper, providing multiple wake-up opportunities even if the initial header is missed.
+4.  **Immediate Rotation:** The 184-bit token is rotated immediately upon any failed GATT authentication attempt, neutralizing potential brute-force or "guessing" attacks.
 
 ---
 
@@ -21,30 +21,35 @@ Stage 1 (XOR Uptime) successfully proved that dual-power proximity synchronizati
 
 ### Payload Data Breakdown (24 Bytes)
 
-#### A. The SHOUT (Discovery Window)
+#### A. The SHOUT (Discovery)
 *   **Power:** +18dBm (High Range)
-*   **Purpose:** Wake the Android app and promote it to High-Speed Scanning.
 *   **Structure:** `[0x00] (Byte 0) + [23 Bytes of Zeros]`
-*   *Note: The zero-block can later be replaced with a public Merchant ID.*
 
-#### B. The WHISPER (Proximity Window)
+#### B. The WHISPER (Security & Sync)
 *   **Power:** -21dBm to -24dBm (Ultra-low Range / Physical Firewall)
-*   **Purpose:** Securely deliver the 184-bit "One-Time Secret" token.
 *   **Structure:** `[Sequence 1-255] (Byte 0) + [184-bit Random Token] (Bytes 1-23)`
 
 ---
 
-## 2. Radio Diagnostic Model: "Sequence Delta"
-Because we cannot see "bad" packets, the Android app tracks the `Sequence` byte:
-*   **Clean Link:** App sees `10, 11, 12, 13`. (Perfect reception).
-*   **Fragile Link:** App sees `10, 15, 22`. 
-    *   *Interpretation:* We just lost 11 packets to CRC failure. This proves the signal is at the absolute edge of the phone's sensitivity.
-*   **Analytics Goal:** Log the "Arrival Rate" (e.g., "Received 3/10 packets") to help calibrate the final hardware enclosure.
+## 2. The Macro Cycle (10 Seconds)
+
+1.  **Phase 1: Discovery Header (1 second)**
+    *   100% Shout duty cycle (+18dBm). 
+    *   LED: SOLID ON.
+    *   Goal: Force-wake all nearby phones.
+2.  **Phase 2: Interaction Window (9 seconds)**
+    *   50/50 Pulse: Alternating every 200ms between **Shout** (+18dBm) and **Whisper** (-21dBm).
+    *   LED: SOLID OFF.
+    *   Goal: Reliable proximity sync for the user while allowing late-arriving phones to still "wake up."
 
 ---
 
-## 3. Handshake Logic (The Stage 3 Preview)
-The whispered **184-bit Token** is not just a password; it will eventually become the **AES-128 Encryption Key** for the Stage 3 GATT connection. 
-1.  Phone captures Whisper Token.
-2.  Phone connects via GATT.
-3.  XIAO transmits the 100+ byte Payment URI over the encrypted tunnel.
+## 3. GATT Tunnel & Auth Logic (Stage 3 Ready)
+
+*   **Service UUID:** `19ed3841-6934-43cb-8d79-f1cc9c343434`
+*   **Auth Characteristic (Write):** Receives the 184-bit whispered token.
+*   **Time Characteristic (Read):** Provides XIAO `millis()` uptime if Auth matches.
+*   **Security Enforcement:**
+    *   On **Match**: Send data -> Disconnect.
+    *   On **Mismatch**: **Rotate Token immediately** -> Disconnect.
+    *   On **Timeout**: If no interaction for 60s, rotate token.
