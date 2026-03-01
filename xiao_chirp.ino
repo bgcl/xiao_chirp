@@ -9,7 +9,7 @@
 #define TIME_CHAR_UUID      "19ed3843-6934-43cb-8d79-f1cc9c343434"
 
 #define SHOUT_PWR           ESP_PWR_LVL_P18
-#define WHISPER_PWR         ESP_PWR_LVL_N21
+#define WHISPER_PWR         ESP_PWR_LVL_N24
 #define DISCOVERY_MS        1000
 #define INTERACTION_MS      9000
 #define PULSE_MS            200
@@ -141,13 +141,14 @@ void loop() {
             // Server-side Watchdog: Forcibly disconnect after 2 seconds
             if (millis() - connection_timestamp > 2000) {
                 Serial.println("WATCHDOG: Forcing Disconnect.");
-                pServerGlobal->disconnect(0); // Disconnect client 0
+                pServerGlobal->disconnect(0); 
+                connection_timestamp = millis(); // Reset timer so it only fires once every 2s if still stuck
             }
             delay(100); 
             continue; 
         }
         
-        if (millis() - session_start > 10000 || rotateTokenNextLoop) generate_new_token();
+        // Removed redundant generate_new_token check here
 
         // Whisper Pulse - 20ms update rate
         BLEDevice::setPower(WHISPER_PWR);
