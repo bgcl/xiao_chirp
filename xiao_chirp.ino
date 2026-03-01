@@ -123,7 +123,8 @@ void setup() {
     pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->setMinInterval(0x20);
     pAdvertising->setMaxInterval(0x20);
-
+    pAdvertising->setScanResponse(false); // Disable scan response
+    
     generate_new_token();
     pAdvertising->start();
 }

@@ -30,6 +30,10 @@ Stage 2 implements a secure, high-speed proximity handshake ("Token & Tunnel") d
 *   **Discovery:** A race condition was identified between the Android "Handshake Timeout" watchdog and the GATT "Success" callback. This could leave `activeGatt` in a non-null state, permanently blocking future syncs.
 *   **Fix:** Implemented `synchronized(this)` blocks around all `activeGatt` access and centralized cleanup into a `cleanupGatt()` method to ensure atomic state resets.
 
+### E. Android OS Scan Rate Limits
+*   **Discovery:** Android 7.0+ silently enforces a limit of 5 BLE scans per 30-second window. Stopping and restarting the scanner during each GATT connection (to clear deduplication caches) caused the OS to blacklist the app, resulting in "deafness" and sync hangs.
+*   **Fix:** The OS scanner is left running continuously. The system relies purely on the `synchronized(this)` state lock (`activeGatt != null`) to logically ignore incoming packets during a connection, bypassing the OS penalty box entirely.
+
 ---
 
 ## 2. Packet Structure (Service Data Record)
